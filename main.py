@@ -42,6 +42,7 @@ class SeleniumAuth:
         options.add_argument("--lang=zh-CN")
 
         driver = webdriver.Edge(
+            service=Service("/usr/bin/msedgedriver"),  # 指向 runner 自带 EdgeDriver
             options=options
         )
 

@@ -26,8 +26,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          sudo apt update
+          sudo apt install -y libnss3 libgconf-2-4
+          pip3 install -r requirements.txt
+
 
       # 3️⃣ 安装 Edge 浏览器 & WebDriver
       - name: Install Microsoft Edge
