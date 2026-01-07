@@ -6,6 +6,79 @@ from cryptography.fernet import Fernet
 import base64
 import hashlib
 
+from selenium import webdriver
+from selenium.webdriver.edge.options import Options
+from selenium.webdriver.edge.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium import webdriver
+from selenium.webdriver.edge.options import Options
+from selenium.webdriver.edge.service import Service
+import requests
+import time
+
+
+class SeleniumAuth:
+    LOGIN_URL = "https://uis.fudan.edu.cn/authserver/login?service=https://fdjwgl.fudan.edu.cn/student/home"
+
+    def __init__(self, uid, password):
+        self.uid = uid
+        self.password = password
+        self.session = requests.Session()
+        self._login_with_edge()
+
+    def _login_with_edge(self):
+        options = Options()
+
+        # ✅ GitHub Actions 必需参数
+        options.add_argument("--headless=new")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+
+        # 稳定性
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--lang=zh-CN")
+
+        driver = webdriver.Edge(
+            options=options
+        )
+
+        try:
+            driver.get(self.LOGIN_URL)
+
+            wait = WebDriverWait(driver, 30)
+
+            # 用户名
+            wait.until(EC.presence_of_element_located((By.ID, "username"))).send_keys(self.uid)
+
+            # 密码
+            driver.find_element(By.ID, "password").send_keys(self.password)
+
+            # 登录按钮
+            driver.find_element(By.CLASS_NAME, "auth_login_btn").click()
+
+            # 等 fdjwgl 首页加载完成
+            wait.until(
+                lambda d: d.current_url.startswith("https://fdjwgl.fudan.edu.cn/student")
+            )
+
+            # 注入 cookies → requests
+            for c in driver.get_cookies():
+                self.session.cookies.set(
+                    c["name"],
+                    c["value"],
+                    domain=c.get("domain"),
+                    path=c.get("path", "/")
+                )
+
+        finally:
+            driver.quit()
+
+    def close(self):
+        self.session.close()
+
 
 class UISAuth:
     # 模拟浏览器的 User-Agent, 防止被服务器识别为爬虫
@@ -64,7 +137,7 @@ class UISAuth:
         # 使用正则提取登录页中所有隐藏字段
         # UIS 登录依赖这些动态参数, 否则会被判定为非法请求
         result = re.findall(
-            '<input type="hidden" name="([a-zA-Z0-9\-_]+)" value="([a-zA-Z0-9\-_]+)"/?>',
+            r'<input type="hidden" name="([a-zA-Z0-9\-_]+)" value="([a-zA-Z0-9\-_]+)"/?>',
             page_login
         )
 
@@ -98,6 +171,11 @@ class UISAuth:
         # 登录成功通常返回 302 / 303 (跳转到 service 页面)
         if post.status_code not in (302, 303):
             raise RuntimeError("UIS login failed")
+
+        # 消费 302 / 303 location, 建立 fdjwgl 域 session
+        location = post.headers.get("Location")
+        if location:
+            self.session.get(location, allow_redirects=True)
 
     def logout(self):
         """
@@ -150,46 +228,54 @@ class Snapshot:
         )
 
 
-class GradeChecker(UISAuth):
+class GradeChecker(SeleniumAuth):
     def __init__(self, uid, password):
         super().__init__(uid, password)
         self.login()
 
     def get_stat(self):
-        res = self.session.get(
-            "https://fdjwgl.fudan.edu.cn/student/for-std/grade/my-gpa",
-            allow_redirects=True
-        )
-
+        url = "https://fdjwgl.fudan.edu.cn/student/for-std/grade/my-gpa/search"
+        params = {
+            "departmentName": "大数据学院",
+            "studentAssoc": "416631",
+            "gradeInput": "2022",
+            "grade": "2022",
+            "departmentAssoc": "3381",
+            "majorAssoc": "1227"
+        }
+        headers = {
+            "Referer": "https://fdjwgl.fudan.edu.cn/student/for-std/grade/my-gpa/search-index/416631",
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+        }
+        res = self.session.get(url, params=params, headers=headers)
         print("STATUS:", res.status_code)
-        print("FINAL URL:", res.url)
+        print("URL:", res.url)
+        print("TEXT[:500]:", res.text[:500])
+        
+        # 登录态校验
+        if "id.fudan.edu.cn" in res.url or "uis.fudan.edu.cn" in res.url:
+            raise RuntimeError("Not logged in: redirected to CAS")
 
-        soup = BeautifulSoup(res.text, 'html.parser')
+        if res.headers.get("Content-Type", "").startswith("text/html"):
+            raise RuntimeError("Not logged in: got HTML instead of JSON")
 
-        # ===== 个人信息 (profile-card) =====
-        if soup.select_one('#my-gpa') is None:
-            # 把前 500 个字符打出来 (判断页面类型)
-            print(res.text[:500])
-            raise RuntimeError("GPA page structure changed")
-        my_gpa = float(node.get_text())
-        my_credits = float(soup.select_one('#my-credit').get_text())
-        my_rank = float(soup.select_one('#my-ranking').get_text())
-
-        # ===== 排名表 GPA 列表 =====
-        gpa_nodes = soup.select('tbody#table-body span.gpa-value')
-        gpa_list = [float(x.get_text()) for x in gpa_nodes]
-
-        # 班级 / 专业统计
+        try:
+            data = res.json()
+        except Exception as e:
+            print("JSON decode failed")
+            print(res.text[:1000])
+            raise e
+        
+        my_gpa = float(data['gpa'])
+        my_credits = float(data['credits'])
+        my_rank = float(data['rank'])
+        
+        gpa_list = [float(x) for x in data['classGPAList']]
         class_average = sum(gpa_list) / len(gpa_list)
-        class_mid = sorted(gpa_list)[len(gpa_list) // 2]
-
-        return Snapshot(
-            my_gpa,
-            my_rank,
-            my_credits,
-            class_average,
-            class_mid
-        )
+        class_mid = sorted(gpa_list)[len(gpa_list)//2]
+        
+        return Snapshot(my_gpa, my_rank, my_credits, class_average, class_mid)
 
 
 def generate_key(password: str) -> bytes:
@@ -296,6 +382,7 @@ if __name__ == '__main__':
     checker = GradeChecker(uid, psw)
     snapshot = checker.get_stat()
     checker.close()
+    print(snapshot)
     
     old_snapshot = read_snapshot(token)
     if snapshot.compare(old_snapshot):
