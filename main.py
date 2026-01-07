@@ -6,12 +6,11 @@ import base64
 import hashlib
 import time
 from selenium import webdriver
-from selenium.webdriver.edge.options import Options
-from selenium.webdriver.edge.service import Service
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
 
 class SeleniumAuth:
     LOGIN_URL = "https://uis.fudan.edu.cn/authserver/login?service=https://fdjwgl.fudan.edu.cn/student/home"
@@ -23,22 +22,12 @@ class SeleniumAuth:
         self._login_with_edge()
 
     def _login_with_edge(self):
+        
         options = Options()
-
-        # GitHub Actions 必需参数
         options.add_argument("--headless=new")
-        options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-
-        # 稳定性
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--lang=zh-CN")
-
-        driver = webdriver.Edge(
-            service=Service("/usr/bin/msedgedriver"),  # 指向 runner 自带 EdgeDriver
-            options=options
-        )
+        driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=options)
 
         try:
             driver.get(self.LOGIN_URL)
