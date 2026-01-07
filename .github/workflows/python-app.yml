@@ -14,21 +14,52 @@ jobs:
     name: Build
     runs-on: ubuntu-22.04
     steps:
+      # 1️⃣ 拉取代码
       - name: Check out code
         uses: actions/checkout@v2
 
+      # 2️⃣ 安装 Python 和依赖
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install dependencies
         run: |
-          pip3 install cryptography
-          pip3 install beautifulsoup4
-          pip3 install requests
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
+      # 3️⃣ 安装 Edge 浏览器 & WebDriver
+      - name: Install Microsoft Edge
+        run: |
+          sudo apt update
+          sudo apt install -y wget unzip software-properties-common apt-transport-https
+          wget https://packages.microsoft.com/keys/microsoft.asc -O- | sudo apt-key add -
+          sudo add-apt-repository "deb [arch=amd64] https://packages.microsoft.com/repos/edge stable main"
+          sudo apt update
+          sudo apt install -y microsoft-edge-stable
+      - name: Install Edge WebDriver
+        run: |
+          EDGE_VERSION=$(microsoft-edge --version | awk '{print $3}')
+          echo "Edge version: $EDGE_VERSION"
+          DRIVER_VERSION=$(curl -sS https://msedgedriver.azureedge.net/LATEST_RELEASE_$EDGE_VERSION)
+          wget https://msedgedriver.azureedge.net/$DRIVER_VERSION/edgedriver_linux64.zip
+          unzip edgedriver_linux64.zip -d $HOME/.local/bin
+          export PATH=$HOME/.local/bin:$PATH
+
+      # 4️⃣ 运行 GPA 检查器
       - name: Run Python script and get result
         id: run_script
+        env:
+          STD_ID: ${{ secrets.STD_ID }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          TOKEN: ${{ secrets.TOKEN }}
+          PATH: $HOME/.local/bin:$PATH
         run: |
-          STD_ID=${{ secrets.STD_ID }} PASSWORD=${{ secrets.PASSWORD }} TOKEN=${{ secrets.TOKEN }} python3 main.py > result.txt
+          python3 main.py > result.txt
           echo "RESULT=$(cat result.txt)" >> $GITHUB_ENV
 
+      # 5️⃣ 如果结果有 update，则提交
       - name: Conditional update
         if: contains(env.RESULT, 'update')
         run: |
