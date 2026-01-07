@@ -1,22 +1,16 @@
 from os import getenv
 import re
 import requests
-from bs4 import BeautifulSoup
 from cryptography.fernet import Fernet
 import base64
 import hashlib
-
+import time
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.edge.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium import webdriver
-from selenium.webdriver.edge.options import Options
-from selenium.webdriver.edge.service import Service
-import requests
-import time
 
 
 class SeleniumAuth:
@@ -78,124 +72,6 @@ class SeleniumAuth:
             driver.quit()
 
     def close(self):
-        self.session.close()
-
-
-class UISAuth:
-    # 模拟浏览器的 User-Agent, 防止被服务器识别为爬虫
-    UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:76.0) Gecko/20100101 Firefox/76.0"
-
-    # 统一身份认证 (UIS) 登录入口, service 参数指定登录成功后的跳转地址
-    url_login = (
-        "https://uis.fudan.edu.cn/authserver/login"
-        "?service=https://fdjwgl.fudan.edu.cn/student/home"
-    )
-
-    def __init__(self, uid, password):
-        # 创建一个 requests Session, 用于维持 Cookie (登录态)
-        self.session = requests.session()
-
-        # 关闭 HTTP keep-alive, 避免连接复用可能导致的问题
-        self.session.keep_alive = False
-
-        # 设置默认 User-Agent
-        self.session.headers['User-Agent'] = self.UA
-
-        # 保存学号和密码
-        self.uid = uid
-        self.psw = password
-
-    def _page_init(self):
-        """
-        初始化登录页面：
-        1. 向登录页发送 GET 请求
-        2. 获取页面 HTML, 用于提取隐藏字段
-        """
-        page_login = self.session.get(self.url_login)
-
-        if page_login.status_code == 200:
-            return page_login.text
-        else:
-            raise RuntimeError("UIS login page unreachable")
-
-    def login(self):
-        """
-        执行登录流程:
-        1. 获取登录页面
-        2. 构造 POST 表单数据
-        3. 提交表单并检查是否 302 重定向 (登录成功标志)
-        """
-        # 获取登录页面 HTML
-        page_login = self._page_init()
-
-        # 基本登录表单字段
-        data = {
-            "username": self.uid,
-            "password": self.psw,
-            "service": "https://fdjwgl.fudan.edu.cn/student/home"
-        }
-
-        # 使用正则提取登录页中所有隐藏字段
-        # UIS 登录依赖这些动态参数, 否则会被判定为非法请求
-        result = re.findall(
-            r'<input type="hidden" name="([a-zA-Z0-9\-_]+)" value="([a-zA-Z0-9\-_]+)"/?>',
-            page_login
-        )
-
-        # 将隐藏字段加入表单数据
-        # result 是 (key, value) 列表, data.update 可直接合并
-        data.update(result)
-
-        # 构造请求头, 尽量模拟真实浏览器行为
-        headers = {
-            "Host": "uis.fudan.edu.cn",
-            "Origin": "https://uis.fudan.edu.cn",
-            "Referer": self.url_login,
-            "User-Agent": self.UA,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Cache-Control": "max-age=0"
-        }
-
-        # 向 UIS 登录接口发送 POST 请求
-        # allow_redirects=False: 不自动跟随重定向，用于判断登录是否成功
-        post = self.session.post(
-            self.url_login,
-            data=data,
-            headers=headers,
-            allow_redirects=False
-        )
-
-        # 登录成功通常返回 302 / 303 (跳转到 service 页面)
-        if post.status_code not in (302, 303):
-            raise RuntimeError("UIS login failed")
-
-        # 消费 302 / 303 location, 建立 fdjwgl 域 session
-        location = post.headers.get("Location")
-        if location:
-            self.session.get(location, allow_redirects=True)
-
-    def logout(self):
-        """
-        显式登出 UIS:
-        1. 调用统一身份认证的 logout 接口
-        2. 清除服务端会话
-        """
-        exit_url = 'https://uis.fudan.edu.cn/authserver/logout?service=/authserver/login'
-
-        # 访问 logout 接口, 使服务器端 session 失效
-        self.session.get(exit_url).headers.get('Set-Cookie')
-
-    def close(self):
-        """
-        关闭认证会话:
-        1. 登出
-        2. 关闭 requests Session
-        """
-        self.logout()
         self.session.close()
 
 
