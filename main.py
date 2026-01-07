@@ -48,7 +48,10 @@ class SeleniumAuth:
             driver.find_element(By.ID, "password").send_keys(self.password)
 
             # 登录按钮
-            driver.find_element(By.CLASS_NAME, "auth_login_btn").click()
+            login_button = driver.find_element(
+                By.XPATH, '//button[span[text()="登录"]]'
+            )
+            login_button.click()
 
             # 等 fdjwgl 首页加载完成
             wait.until(
