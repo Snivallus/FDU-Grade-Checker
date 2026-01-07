@@ -48,8 +48,10 @@ class SeleniumAuth:
             driver.find_element(By.ID, "password").send_keys(self.password)
 
             # 登录按钮
-            login_button = driver.find_element(
-                By.XPATH, '//button[span[text()="登录"]]'
+            login_button = WebDriverWait(driver, 20).until(
+                EC.element_to_be_clickable(
+                    (By.XPATH, '//button[contains(@class,"submitBtnColor") and contains(.,"登录")]')
+                )
             )
             login_button.click()
 
