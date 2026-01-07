@@ -157,14 +157,19 @@ class GradeChecker(UISAuth):
 
     def get_stat(self):
         res = self.session.get(
-            "https://fdjwgl.fudan.edu.cn/student/for-std/grade/my-gpa"
+            "https://fdjwgl.fudan.edu.cn/student/for-std/grade/my-gpa",
+            allow_redirects=True
         )
+
+        print("STATUS:", res.status_code)
+        print("FINAL URL:", res.url)
 
         soup = BeautifulSoup(res.text, 'html.parser')
 
         # ===== 个人信息 (profile-card) =====
-        node = soup.select_one('#my-gpa')
-        if node is None:
+        if soup.select_one('#my-gpa') is None:
+            # 把前 500 个字符打出来 (判断页面类型)
+            print(res.text[:500])
             raise RuntimeError("GPA page structure changed")
         my_gpa = float(node.get_text())
         my_credits = float(soup.select_one('#my-credit').get_text())
