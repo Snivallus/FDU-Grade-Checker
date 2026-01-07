@@ -25,7 +25,7 @@ class SeleniumAuth:
     def _login_with_edge(self):
         options = Options()
 
-        # ✅ GitHub Actions 必需参数
+        # GitHub Actions 必需参数
         options.add_argument("--headless=new")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
