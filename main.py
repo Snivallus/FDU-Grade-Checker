@@ -5,74 +5,70 @@ from cryptography.fernet import Fernet
 import base64
 import hashlib
 import time
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
-class SeleniumAuth:
-    LOGIN_URL = "https://uis.fudan.edu.cn/authserver/login?service=https://fdjwgl.fudan.edu.cn/student/home"
+
+class UISAuth:
+    UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:76.0) Gecko/20100101 Firefox/76.0"
+
+    url_login = 'https://uis.fudan.edu.cn/authserver/login?service=https://fdjwgl.fudan.edu.cn/student/home'
 
     def __init__(self, uid, password):
+        self.session = requests.session()
+        self.session.keep_alive = False
+        self.session.headers['User-Agent'] = self.UA
         self.uid = uid
-        self.password = password
-        self.session = requests.Session()
-        self._login_with_edge()
+        self.psw = password
 
-    def _login_with_edge(self):
-        
-        options = Options()
-        options.add_argument("--headless=new")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--lang=zh-CN")
+    def _page_init(self):
+        page_login = self.session.get(self.url_login)
+        if page_login.status_code == 200:
+            return page_login.text
+        else:
+            self.close()
 
-        driver = webdriver.Chrome(
-            service=Service("/usr/bin/chromedriver"),
-            options=options
+    def login(self):
+        page_login = self._page_init()
+        data = {
+            "username": self.uid,
+            "password": self.psw,
+            "service": "https://fdjwgl.fudan.edu.cn/student/home"
+        }
+
+        result = re.findall(
+            r'<input type="hidden" name="([a-zA-Z0-9\-_]+)" value="([a-zA-Z0-9\-_]+)"/?>', 
+            page_login
         )
 
-        try:
-            driver.get(self.LOGIN_URL)
+        data.update(result)
 
-            wait = WebDriverWait(driver, 30)
+        headers = {
+            "Host": "uis.fudan.edu.cn",
+            "Origin": "https://uis.fudan.edu.cn",
+            "Referer": self.url_login,
+            "User-Agent": self.UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Cache-Control": "max-age=0"
+        }
 
-            # 用户名
-            wait.until(EC.presence_of_element_located((By.ID, "username"))).send_keys(self.uid)
+        post = self.session.post(
+            self.url_login,
+            data=data,
+            headers=headers,
+            allow_redirects=False)
 
-            # 密码
-            driver.find_element(By.ID, "password").send_keys(self.password)
+        if not post.status_code == 302:
+            self.close()
 
-            # 登录按钮
-            login_button = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable(
-                    (By.XPATH, '//button[contains(@class,"submitBtnColor") and contains(.,"登录")]')
-                )
-            )
-            login_button.click()
-
-            # 等 fdjwgl 首页加载完成
-            wait.until(
-                lambda d: d.current_url.startswith("https://fdjwgl.fudan.edu.cn/student")
-            )
-
-            # 注入 cookies → requests
-            for c in driver.get_cookies():
-                self.session.cookies.set(
-                    c["name"],
-                    c["value"],
-                    domain=c.get("domain"),
-                    path=c.get("path", "/")
-                )
-
-        finally:
-            driver.quit()
+    def logout(self):
+        exit_url = 'https://uis.fudan.edu.cn/authserver/logout?service=/authserver/login'
+        self.session.get(exit_url).headers.get('Set-Cookie')
 
     def close(self):
+        self.logout()
         self.session.close()
 
 
@@ -106,27 +102,13 @@ class Snapshot:
         )
 
 
-class GradeChecker(SeleniumAuth):
+class GradeChecker(UISAuth):
     def __init__(self, uid, password):
         super().__init__(uid, password)
         self.login()
 
     def get_stat(self):
-        url = "https://fdjwgl.fudan.edu.cn/student/for-std/grade/my-gpa/search"
-        params = {
-            "departmentName": "大数据学院",
-            "studentAssoc": "416631",
-            "gradeInput": "2022",
-            "grade": "2022",
-            "departmentAssoc": "3381",
-            "majorAssoc": "1227"
-        }
-        headers = {
-            "Referer": "https://fdjwgl.fudan.edu.cn/student/for-std/grade/my-gpa/search-index/416631",
-            "X-Requested-With": "XMLHttpRequest",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-        }
-        res = self.session.get(url, params=params, headers=headers)
+        res = self.session.get("https://fdjwgl.fudan.edu.cn/student/for-std/grade/my-gpa")
         print("STATUS:", res.status_code)
         print("URL:", res.url)
         print("TEXT[:500]:", res.text[:500])
@@ -255,17 +237,19 @@ def read_snapshot(password):
 
         
 if __name__ == '__main__':
-    uid, psw, token = getenv("STD_ID"), getenv("PASSWORD"), getenv("TOKEN")
-    assert (uid and psw and token)
+    # uid, psw, token = getenv("STD_ID"), getenv("PASSWORD"), getenv("TOKEN")
+    # assert (uid and psw and token)
+    uid = "21307140051"
+    psw = "Yongcuiyang0320"
     checker = GradeChecker(uid, psw)
     snapshot = checker.get_stat()
     checker.close()
     print(snapshot)
     
-    old_snapshot = read_snapshot(token)
-    if snapshot.compare(old_snapshot):
-        save_snapshot(snapshot, token)
-        title = f'GPA {str(old_snapshot.gpa if old_snapshot is not None else 0.0)} -> {str(snapshot.gpa)}'
-        url = f'http://www.pushplus.plus/send?token={token}&title={title}&content=排名：{int(old_snapshot.rank if old_snapshot is not None else 0.0)} -> {int(snapshot.rank)}&template=html'
-        requests.get(url)
-        print('update')
+    # old_snapshot = read_snapshot(token)
+    # if snapshot.compare(old_snapshot):
+    #     save_snapshot(snapshot, token)
+    #     title = f'GPA {str(old_snapshot.gpa if old_snapshot is not None else 0.0)} -> {str(snapshot.gpa)}'
+    #     url = f'http://www.pushplus.plus/send?token={token}&title={title}&content=排名：{int(old_snapshot.rank if old_snapshot is not None else 0.0)} -> {int(snapshot.rank)}&template=html'
+    #     requests.get(url)
+    #     print('update')
